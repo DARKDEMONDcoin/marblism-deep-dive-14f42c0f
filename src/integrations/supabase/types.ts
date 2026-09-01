@@ -162,8 +162,11 @@ export type Database = {
           detail: string | null
           employee_id: string
           id: string
+          kind: string
           output: string | null
+          scheduled: string | null
           status: string
+          steps: Json
           title: string
           updated_at: string
           workspace_id: string
@@ -174,8 +177,11 @@ export type Database = {
           detail?: string | null
           employee_id: string
           id?: string
+          kind?: string
           output?: string | null
+          scheduled?: string | null
           status?: string
+          steps?: Json
           title: string
           updated_at?: string
           workspace_id: string
@@ -186,8 +192,11 @@ export type Database = {
           detail?: string | null
           employee_id?: string
           id?: string
+          kind?: string
           output?: string | null
+          scheduled?: string | null
           status?: string
+          steps?: Json
           title?: string
           updated_at?: string
           workspace_id?: string

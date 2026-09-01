@@ -1,16 +1,22 @@
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { CreditCard, Users, Building2, Bell, Plus } from "lucide-react";
+import { CreditCard, Building2, Bell, User } from "lucide-react";
 
 import { AppShell } from "@/components/app/AppShell";
-import { workspaces, usage } from "@/data/app";
+import {
+  useProfile,
+  useTasks,
+  useUpdateProfile,
+  useUpdateWorkspace,
+  useWorkspace,
+} from "@/lib/data";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app/settings")({
   head: () => ({
     meta: [
       { title: "الإعدادات | سهل" },
-      { name: "description", content: "مساحة العمل، الفريق، الاشتراك والتنبيهات." },
+      { name: "description", content: "مساحة العمل، حسابك، الاشتراك والتنبيهات." },
       { name: "robots", content: "noindex" },
     ],
   }),
@@ -19,175 +25,190 @@ export const Route = createFileRoute("/app/settings")({
 
 const tabs = [
   { id: "workspace", label: "مساحة العمل", icon: Building2 },
-  { id: "team", label: "الفريق", icon: Users },
+  { id: "account", label: "حسابك", icon: User },
   { id: "billing", label: "الاشتراك", icon: CreditCard },
   { id: "notifications", label: "التنبيهات", icon: Bell },
 ] as const;
 
-const members = [
-  { name: "عبدالله الحربي", email: "abdullah@nakhla.sa", role: "مالك" },
-  { name: "ريم القحطاني", email: "reem@nakhla.sa", role: "محرِّر" },
-  { name: "سلمان العتيبي", email: "salman@nakhla.sa", role: "مشاهد" },
-];
-
-const field = "w-full rounded-2xl border border-border bg-card px-4 py-3 outline-none focus:border-jade";
+const field =
+  "w-full rounded-2xl border border-border bg-background px-4 py-3 outline-none focus:border-jade";
 
 function SettingsPage() {
   const [tab, setTab] = useState<(typeof tabs)[number]["id"]>("workspace");
+  const { data: workspace } = useWorkspace();
+  const { data: profile } = useProfile();
+  const { data: tasks } = useTasks(workspace?.id);
+  const updateWorkspace = useUpdateWorkspace();
+  const updateProfile = useUpdateProfile();
+  const [saved, setSaved] = useState<string | null>(null);
+
+  const doneCount = (tasks ?? []).filter((t) => t.status === "done").length;
 
   return (
-    <AppShell title="الإعدادات" lead="كل ما يخص مساحة عملك وفريقك واشتراكك.">
-      <div className="grid gap-6 lg:grid-cols-[16rem_1fr]">
-        <nav className="space-y-1">
+    <AppShell title="الإعدادات" lead="كل ما يخص مساحة عملك وحسابك.">
+      <div className="grid gap-6 lg:grid-cols-[14rem_1fr]">
+        <nav className="flex gap-2 overflow-x-auto lg:flex-col">
           {tabs.map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
               className={cn(
-                "flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition-colors",
+                "inline-flex shrink-0 items-center gap-2.5 rounded-2xl px-4 py-2.5 text-sm font-bold transition-colors",
                 tab === t.id ? "bg-foreground text-background" : "hover:bg-secondary",
               )}
             >
-              <t.icon className="size-4.5" />
-              {t.label}
+              <t.icon className="size-4" /> {t.label}
             </button>
           ))}
         </nav>
 
-        <div className="rounded-3xl border border-border bg-card p-7">
-          {tab === "workspace" ? (
-            <div className="space-y-5">
-              <h2 className="font-display text-xl font-black">مساحة العمل</h2>
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="block">
-                  <span className="mb-2 block text-sm font-bold">اسم النشاط</span>
-                  <input className={field} defaultValue={workspaces[0]!.name} />
-                </label>
-                <label className="block">
-                  <span className="mb-2 block text-sm font-bold">المجال</span>
-                  <input className={field} defaultValue={workspaces[0]!.industry} />
-                </label>
-                <label className="block md:col-span-2">
-                  <span className="mb-2 block text-sm font-bold">وصف مختصر لعلامتك</span>
-                  <textarea
-                    className={cn(field, "min-h-28 resize-none")}
-                    defaultValue="نورّد تموراً فاخرة معبأة يدوياً للمتاجر والفنادق في السعودية، بتركيز على الجودة والتغليف الأنيق."
-                  />
-                </label>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button className="rounded-full bg-foreground px-6 py-2.5 text-sm font-bold text-background">
-                  حفظ التغييرات
-                </button>
-                <Link
-                  to="/onboarding"
-                  className="rounded-full border border-border px-6 py-2.5 text-sm font-bold"
-                >
-                  مساحة عمل جديدة
-                </Link>
-              </div>
-            </div>
+        <div className="rounded-3xl border border-border bg-card p-6 md:p-8">
+          {saved ? (
+            <p className="mb-5 rounded-2xl bg-jade/12 px-4 py-3 text-sm font-semibold text-jade-deep">
+              {saved}
+            </p>
           ) : null}
 
-          {tab === "team" ? (
-            <div className="space-y-5">
-              <div className="flex items-center justify-between">
-                <h2 className="font-display text-xl font-black">أعضاء الفريق</h2>
-                <button className="inline-flex items-center gap-2 rounded-full bg-foreground px-5 py-2.5 text-sm font-bold text-background">
-                  <Plus className="size-4" /> دعوة عضو
-                </button>
-              </div>
-              <ul className="divide-y divide-border">
-                {members.map((m) => (
-                  <li key={m.email} className="flex flex-wrap items-center gap-3 py-4">
-                    <span className="grid size-10 place-items-center rounded-2xl bg-secondary font-display font-black">
-                      {m.name.charAt(0)}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-bold">{m.name}</span>
-                      <span className="block truncate text-sm text-muted-foreground">{m.email}</span>
-                    </span>
-                    <span className="rounded-full bg-secondary px-3.5 py-1.5 text-xs font-bold">
-                      {m.role}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+          {tab === "workspace" && workspace ? (
+            <form
+              className="space-y-4"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const f = new FormData(e.currentTarget);
+                await updateWorkspace.mutateAsync({
+                  id: workspace.id,
+                  patch: {
+                    name: String(f.get("name")),
+                    industry: String(f.get("industry")),
+                    tone: String(f.get("tone")),
+                    banned_words: String(f.get("banned"))
+                      .split("،")
+                      .map((s) => s.trim())
+                      .filter(Boolean),
+                  },
+                });
+                setSaved("تم حفظ إعدادات مساحة العمل.");
+              }}
+            >
+              <h2 className="font-display text-xl font-black">مساحة العمل</h2>
+              <label className="block">
+                <span className="mb-2 block text-sm font-bold">اسم النشاط</span>
+                <input name="name" defaultValue={workspace.name} className={field} />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-bold">المجال</span>
+                <input name="industry" defaultValue={workspace.industry} className={field} />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-bold">نبرة العلامة</span>
+                <textarea
+                  name="tone"
+                  defaultValue={workspace.tone}
+                  className={cn(field, "min-h-24 resize-none")}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-bold">
+                  كلمات ممنوعة (افصل بينها بفاصلة عربية)
+                </span>
+                <input
+                  name="banned"
+                  defaultValue={workspace.banned_words.join("، ")}
+                  className={field}
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={updateWorkspace.isPending}
+                className="rounded-full bg-foreground px-6 py-2.5 text-sm font-bold text-background disabled:opacity-60"
+              >
+                {updateWorkspace.isPending ? "جارٍ الحفظ…" : "حفظ التغييرات"}
+              </button>
+            </form>
+          ) : null}
+
+          {tab === "account" && profile ? (
+            <form
+              className="space-y-4"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const f = new FormData(e.currentTarget);
+                await updateProfile.mutateAsync({
+                  id: profile.id,
+                  patch: {
+                    full_name: String(f.get("full_name")),
+                    dialect: String(f.get("dialect")),
+                  },
+                });
+                setSaved("تم تحديث حسابك.");
+              }}
+            >
+              <h2 className="font-display text-xl font-black">حسابك</h2>
+              <label className="block">
+                <span className="mb-2 block text-sm font-bold">الاسم</span>
+                <input name="full_name" defaultValue={profile.full_name ?? ""} className={field} />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-bold">لهجة المحتوى</span>
+                <select name="dialect" defaultValue={profile.dialect} className={field}>
+                  <option>خليجية</option>
+                  <option>مصرية</option>
+                  <option>شامية</option>
+                  <option>مغاربية</option>
+                  <option>فصحى معاصرة</option>
+                </select>
+              </label>
+              <button
+                type="submit"
+                disabled={updateProfile.isPending}
+                className="rounded-full bg-foreground px-6 py-2.5 text-sm font-bold text-background disabled:opacity-60"
+              >
+                {updateProfile.isPending ? "جارٍ الحفظ…" : "حفظ"}
+              </button>
+            </form>
           ) : null}
 
           {tab === "billing" ? (
-            <div className="space-y-5">
+            <div className="space-y-4">
               <h2 className="font-display text-xl font-black">الاشتراك</h2>
-              <div className="rounded-2xl bg-secondary/60 p-6">
-                <p className="text-sm font-bold text-muted-foreground">باقتك الحالية</p>
-                <p className="mt-1 font-display text-2xl font-black">النمو — ٣٩٩ ر.س / شهرياً</p>
-                <p className="mt-1 text-sm text-ink-soft">التجديد القادم ١ أكتوبر · إلغاء متى شئت</p>
+              <div className="rounded-2xl bg-secondary/50 p-5">
+                <p className="font-bold">التجربة المجانية</p>
+                <p className="mt-1 text-sm text-ink-soft">
+                  استهلكت {doneCount} مهمة منجزة من أصل ٥٠ ضمن باقتك الحالية.
+                </p>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-card">
+                  <div
+                    className="h-full rounded-full bg-jade"
+                    style={{ width: `${Math.min(100, (doneCount / 50) * 100)}%` }}
+                  />
+                </div>
               </div>
-              <ul className="space-y-4">
-                {usage.map((u) => (
-                  <li key={u.label}>
-                    <div className="flex items-baseline justify-between text-sm">
-                      <span className="font-semibold text-ink-soft">{u.label}</span>
-                      <span className="font-display font-black">
-                        {u.used}/{u.total} {u.unit}
-                      </span>
-                    </div>
-                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-secondary">
-                      <div
-                        className="h-full rounded-full bg-jade"
-                        style={{ width: `${(u.used / u.total) * 100}%` }}
-                      />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              <div className="flex flex-wrap gap-2">
-                <Link
-                  to="/pricing"
-                  className="rounded-full bg-foreground px-6 py-2.5 text-sm font-bold text-background"
-                >
-                  ترقية الباقة
-                </Link>
-                <button className="rounded-full border border-border px-6 py-2.5 text-sm font-bold">
-                  الفواتير السابقة
-                </button>
-              </div>
+              <Link
+                to="/pricing"
+                className="inline-block rounded-full bg-foreground px-6 py-2.5 text-sm font-bold text-background"
+              >
+                عرض الباقات
+              </Link>
             </div>
           ) : null}
 
           {tab === "notifications" ? (
-            <div className="space-y-5">
+            <div className="space-y-4">
               <h2 className="font-display text-xl font-black">التنبيهات</h2>
-              <ul className="divide-y divide-border">
-                {[
-                  ["ملخص صباحي يومي", "٧:٣٠ ص كل يوم عمل", true],
-                  ["تنبيه فوري عند عنصر ينتظر موافقتك", "بريد + إشعار داخل التطبيق", true],
-                  ["تقرير أسبوعي للأداء", "كل أحد ٩:٠٠ ص", true],
-                  ["تنبيه انقطاع ربط حساب", "فوري", true],
-                  ["نصائح ومستجدات سهل", "مرة شهرياً", false],
-                ].map(([title, sub, on]) => (
-                  <li key={title as string} className="flex items-center gap-3 py-4">
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-bold">{title as string}</span>
-                      <span className="block text-sm text-muted-foreground">{sub as string}</span>
-                    </span>
-                    <span
-                      className={cn(
-                        "flex h-7 w-12 shrink-0 items-center rounded-full p-1 transition-colors",
-                        on ? "bg-jade" : "bg-secondary",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "size-5 rounded-full bg-card shadow transition-transform",
-                          on ? "-translate-x-5" : "translate-x-0",
-                        )}
-                      />
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              {["عند جاهزية عنصر للموافقة", "عند انقطاع ربط حساب", "ملخص أسبوعي بالبريد"].map(
+                (label) => (
+                  <label
+                    key={label}
+                    className="flex items-center justify-between rounded-2xl border border-border p-4"
+                  >
+                    <span className="text-sm font-semibold">{label}</span>
+                    <input type="checkbox" defaultChecked className="size-5 accent-current" />
+                  </label>
+                ),
+              )}
+              <p className="text-sm text-muted-foreground">
+                تُطبَّق التنبيهات على بريد حسابك الحالي.
+              </p>
             </div>
           ) : null}
         </div>

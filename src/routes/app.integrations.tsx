@@ -1,10 +1,12 @@
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { ShieldCheck, RefreshCw } from "lucide-react";
+import { ShieldCheck, RefreshCw, Loader2 } from "lucide-react";
 
 import { AppShell } from "@/components/app/AppShell";
 import { AppIcon, appLabel } from "@/components/site/AppIcon";
 import { team } from "@/data/team";
-import { integrations, integrationStatusLabel } from "@/data/app";
+import { integrationStatusLabel } from "@/data/app";
+import { useIntegrations, useSetIntegrationStatus, useWorkspace } from "@/lib/data";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app/integrations")({
@@ -19,8 +21,31 @@ export const Route = createFileRoute("/app/integrations")({
 });
 
 function IntegrationsPage() {
-  const connected = integrations.filter((i) => i.status === "connected").length;
-  const broken = integrations.filter((i) => i.status === "error");
+  const { data: workspace } = useWorkspace();
+  const { data: integrations, isLoading } = useIntegrations(workspace?.id);
+  const setStatus = useSetIntegrationStatus(workspace?.id);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const all = integrations ?? [];
+  const connected = all.filter((i) => i.status === "connected").length;
+  const broken = all.filter((i) => i.status === "error");
+
+  const toggle = async (id: string, status: string, provider: string) => {
+    setBusy(id);
+    try {
+      if (status === "connected") {
+        await setStatus.mutateAsync({ id, status: "disconnected", account: null });
+      } else {
+        await setStatus.mutateAsync({
+          id,
+          status: "connected",
+          account: `${workspace?.name ?? "حسابي"} · ${appLabel(provider)}`,
+        });
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
 
   return (
     <AppShell
@@ -36,59 +61,71 @@ function IntegrationsPage() {
         </div>
       ) : null}
 
-      <div className="space-y-6">
-        {team.map((m) => {
-          const owned = integrations.filter((i) => i.owner === m.id);
-          if (!owned.length) return null;
-          return (
-            <section key={m.id} className="rounded-3xl border border-border bg-card p-6">
-              <div className="flex items-center gap-3">
-                <span
-                  className="grid size-10 place-items-center rounded-2xl"
-                  style={{ background: m.tintSoft, color: m.tint }}
-                >
-                  <m.icon className="size-5" strokeWidth={2.2} />
-                </span>
-                <div>
-                  <h2 className="font-display font-black">{m.name}</h2>
-                  <p className="text-sm text-muted-foreground">{m.role}</p>
-                </div>
-              </div>
-
-              <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {owned.map((i) => (
-                  <div
-                    key={i.id}
-                    className="flex items-center gap-3 rounded-2xl border border-border/70 p-4"
+      {isLoading ? (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> جارٍ التحميل…
+        </p>
+      ) : (
+        <div className="space-y-6">
+          {team.map((m) => {
+            const owned = all.filter((i) => i.employee_id === m.id);
+            if (!owned.length) return null;
+            return (
+              <section key={m.id} className="rounded-3xl border border-border bg-card p-6">
+                <div className="flex items-center gap-3">
+                  <span
+                    className="grid size-10 place-items-center rounded-2xl"
+                    style={{ background: m.tintSoft, color: m.tint }}
                   >
-                    <AppIcon name={i.id} className="size-6 shrink-0" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-bold">{appLabel(i.id)}</span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {i.account ?? "لم يُربط بعد"}
-                      </span>
-                    </span>
-                    <button
-                      className={cn(
-                        "shrink-0 rounded-full px-3.5 py-1.5 text-xs font-bold transition-colors",
-                        i.status === "connected" && "bg-jade/12 text-jade-deep",
-                        i.status === "error" && "bg-coral text-background",
-                        i.status === "disconnected" && "bg-foreground text-background",
-                      )}
-                    >
-                      {i.status === "connected"
-                        ? integrationStatusLabel.connected
-                        : i.status === "error"
-                          ? "أعد الربط"
-                          : "اربط"}
-                    </button>
+                    <m.icon className="size-5" strokeWidth={2.2} />
+                  </span>
+                  <div>
+                    <h2 className="font-display font-black">{m.name}</h2>
+                    <p className="text-sm text-muted-foreground">{m.role}</p>
                   </div>
-                ))}
-              </div>
-            </section>
-          );
-        })}
-      </div>
+                </div>
+
+                <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {owned.map((i) => (
+                    <div
+                      key={i.id}
+                      className="flex items-center gap-3 rounded-2xl border border-border/70 p-4"
+                    >
+                      <AppIcon name={i.provider} className="size-6 shrink-0" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-bold">
+                          {appLabel(i.provider)}
+                        </span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {i.account ?? "لم يُربط بعد"}
+                        </span>
+                      </span>
+                      <button
+                        onClick={() => void toggle(i.id, i.status, i.provider)}
+                        disabled={busy === i.id}
+                        className={cn(
+                          "shrink-0 rounded-full px-3.5 py-1.5 text-xs font-bold transition-colors disabled:opacity-60",
+                          i.status === "connected" && "bg-jade/12 text-jade-deep",
+                          i.status === "error" && "bg-coral text-background",
+                          i.status === "disconnected" && "bg-foreground text-background",
+                        )}
+                      >
+                        {busy === i.id
+                          ? "…"
+                          : i.status === "connected"
+                            ? integrationStatusLabel.connected
+                            : i.status === "error"
+                              ? "أعد الربط"
+                              : "اربط"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
 
       <div className="mt-6 flex items-start gap-3 rounded-3xl border border-border bg-secondary/50 p-6">
         <ShieldCheck className="size-5 shrink-0 text-jade-deep" />

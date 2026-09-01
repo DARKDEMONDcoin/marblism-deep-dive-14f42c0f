@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Upload, FileText, Link2, StickyNote, Images, Search, Trash2 } from "lucide-react";
+import { Plus, FileText, Link2, StickyNote, Images, Search, Trash2, Loader2 } from "lucide-react";
 
 import { AppShell } from "@/components/app/AppShell";
 import { getMember } from "@/data/team";
-import { brainItems, brainKindLabel, type BrainItem } from "@/data/app";
+import { brainKindLabel } from "@/data/app";
+import { useAddBrainItem, useBrainItems, useDeleteBrainItem, useWorkspace } from "@/lib/data";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app/brain")({
@@ -21,28 +22,37 @@ export const Route = createFileRoute("/app/brain")({
   component: BrainPage,
 });
 
-const kindIcon = {
+const kindIcon: Record<string, typeof FileText> = {
   doc: FileText,
   link: Link2,
   note: StickyNote,
   image: Images,
-} as const;
+};
 
 function BrainPage() {
   const [query, setQuery] = useState("");
-  const [kind, setKind] = useState<BrainItem["kind"] | "all">("all");
+  const [kind, setKind] = useState<string>("all");
+  const [open, setOpen] = useState(false);
+  const { data: workspace } = useWorkspace();
+  const { data: items, isLoading } = useBrainItems(workspace?.id);
+  const add = useAddBrainItem(workspace?.id);
+  const del = useDeleteBrainItem(workspace?.id);
 
-  const list = brainItems.filter(
+  const list = (items ?? []).filter(
     (i) => (kind === "all" || i.kind === kind) && i.title.includes(query.trim()),
   );
+  const filled = new Set((items ?? []).map((i) => i.kind)).size;
 
   return (
     <AppShell
       title="عقل العلامة"
       lead="كلما أطعمته أكثر، صار فريقك أدق — النبرة والأسعار والقواعد الممنوعة."
       actions={
-        <button className="hidden items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-sm font-bold text-background sm:inline-flex">
-          <Upload className="size-4" /> أضف معرفة
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="hidden items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-sm font-bold text-background sm:inline-flex"
+        >
+          <Plus className="size-4" /> أضف معرفة
         </button>
       }
     >
@@ -74,55 +84,113 @@ function BrainPage() {
             ))}
           </div>
 
-          <div className="mt-5 rounded-3xl border-2 border-dashed border-border p-8 text-center">
-            <Upload className="mx-auto size-6 text-muted-foreground" />
-            <p className="mt-3 font-bold">اسحب ملفاتك هنا</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              PDF، Word، Excel، صور، أو الصق رابط موقعك ليقرأه فريقك.
-            </p>
-          </div>
+          <form
+            className={cn(
+              "mt-5 space-y-3 rounded-3xl border border-border bg-card p-6",
+              open ? "block" : "hidden",
+            )}
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              const form = e.currentTarget;
+              await add.mutateAsync({
+                kind: String(f.get("kind")),
+                title: String(f.get("title")),
+                body: String(f.get("body")),
+                meta: `${brainKindLabel[String(f.get("kind")) as keyof typeof brainKindLabel]} · أضيف يدوياً`,
+              });
+              form.reset();
+              setOpen(false);
+            }}
+          >
+            <div className="grid gap-3 sm:grid-cols-[10rem_1fr]">
+              <select
+                name="kind"
+                defaultValue="note"
+                className="rounded-2xl border border-border px-4 py-3 outline-none focus:border-jade"
+              >
+                <option value="note">ملاحظة</option>
+                <option value="doc">مستند</option>
+                <option value="link">رابط</option>
+                <option value="image">صورة</option>
+              </select>
+              <input
+                name="title"
+                required
+                placeholder="العنوان — مثال: قائمة الأسعار ٢٠٢٥"
+                className="rounded-2xl border border-border px-4 py-3 outline-none focus:border-jade"
+              />
+            </div>
+            <textarea
+              name="body"
+              required
+              placeholder="اكتب المحتوى الذي سيقرأه فريقك…"
+              className="min-h-28 w-full resize-none rounded-2xl border border-border px-4 py-3 outline-none focus:border-jade"
+            />
+            <button
+              type="submit"
+              disabled={add.isPending || !workspace}
+              className="rounded-full bg-foreground px-6 py-2.5 text-sm font-bold text-background disabled:opacity-60"
+            >
+              {add.isPending ? "جارٍ الحفظ…" : "احفظ في عقل العلامة"}
+            </button>
+          </form>
 
-          <ul className="mt-5 space-y-3">
-            {list.map((item) => {
-              const Icon = kindIcon[item.kind];
-              return (
-                <li
-                  key={item.id}
-                  className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card p-4"
-                >
-                  <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary text-primary">
-                    <Icon className="size-5" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-bold">{item.title}</span>
-                    <span className="block text-xs text-muted-foreground">{item.meta}</span>
-                  </span>
-                  <span className="flex -space-x-2 space-x-reverse">
-                    {item.usedBy.map((uid) => {
-                      const m = getMember(uid);
-                      if (!m) return null;
-                      return (
-                        <span
-                          key={uid}
-                          title={m.name}
-                          className="grid size-7 place-items-center rounded-full border-2 border-card"
-                          style={{ background: m.tintSoft, color: m.tint }}
-                        >
-                          <m.icon className="size-3.5" strokeWidth={2.4} />
-                        </span>
-                      );
-                    })}
-                  </span>
-                  <button
-                    className="grid size-9 shrink-0 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-secondary hover:text-coral"
-                    aria-label="حذف"
+          {isLoading ? (
+            <p className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" /> جارٍ التحميل…
+            </p>
+          ) : (
+            <ul className="mt-5 space-y-3">
+              {list.map((item) => {
+                const Icon = kindIcon[item.kind] ?? StickyNote;
+                return (
+                  <li
+                    key={item.id}
+                    className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card p-4"
                   >
-                    <Trash2 className="size-4" />
-                  </button>
+                    <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary text-primary">
+                      <Icon className="size-5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-bold">{item.title}</span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {item.meta ?? item.body}
+                      </span>
+                    </span>
+                    <span className="flex -space-x-2 space-x-reverse">
+                      {item.used_by.map((uid) => {
+                        const m = getMember(uid);
+                        if (!m) return null;
+                        return (
+                          <span
+                            key={uid}
+                            title={m.name}
+                            className="grid size-7 place-items-center rounded-full border-2 border-card"
+                            style={{ background: m.tintSoft, color: m.tint }}
+                          >
+                            <m.icon className="size-3.5" strokeWidth={2.4} />
+                          </span>
+                        );
+                      })}
+                    </span>
+                    <button
+                      onClick={() => del.mutate(item.id)}
+                      className="grid size-9 shrink-0 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-secondary hover:text-coral"
+                      aria-label="حذف"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  </li>
+                );
+              })}
+              {list.length === 0 ? (
+                <li className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                  لا توجد عناصر — أضف أول معرفة لعلامتك.
                 </li>
-              );
-            })}
-          </ul>
+              ) : null}
+            </ul>
+          )}
         </div>
 
         <aside className="space-y-4">
@@ -131,31 +199,15 @@ function BrainPage() {
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-secondary">
               <div
                 className="h-full rounded-full"
-                style={{ width: "72%", backgroundImage: "var(--gradient-aurora)" }}
+                style={{
+                  width: `${Math.min(100, ((items?.length ?? 0) / 8) * 100)}%`,
+                  backgroundImage: "var(--gradient-aurora)",
+                }}
               />
             </div>
-            <p className="mt-2 text-sm text-muted-foreground">٧٢٪ — أضف ما ينقص لترتفع الدقة.</p>
-            <ul className="mt-4 space-y-2 text-sm">
-              {[
-                ["نبرة العلامة", true],
-                ["قائمة الأسعار", true],
-                ["الكلمات الممنوعة", true],
-                ["١٠ نصوص تفتخر بها", false],
-                ["ملف العميل المثالي", false],
-              ].map(([label, done]) => (
-                <li key={label as string} className="flex items-center gap-2">
-                  <span
-                    className={cn(
-                      "size-2 rounded-full",
-                      done ? "bg-jade" : "bg-muted-foreground/30",
-                    )}
-                  />
-                  <span className={done ? "text-ink-soft" : "text-muted-foreground"}>
-                    {label as string}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {items?.length ?? 0} عنصراً · {filled} أنواع مغطاة
+            </p>
           </section>
 
           <section className="rounded-3xl border border-border bg-secondary/50 p-6">

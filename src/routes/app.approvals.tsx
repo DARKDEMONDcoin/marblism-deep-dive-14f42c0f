@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Check, Pencil, X, PartyPopper } from "lucide-react";
+import { Check, X, PartyPopper, Loader2 } from "lucide-react";
 
 import { AppShell } from "@/components/app/AppShell";
 import { AppIcon, appLabel } from "@/components/site/AppIcon";
 import { getMember } from "@/data/team";
-import { approvals } from "@/data/app";
+import { useTasks, useUpdateTask, useWorkspace } from "@/lib/data";
 
 export const Route = createFileRoute("/app/approvals")({
   head: () => ({
@@ -19,19 +19,41 @@ export const Route = createFileRoute("/app/approvals")({
 });
 
 function ApprovalsPage() {
-  const [handled, setHandled] = useState<Record<string, "approved" | "rejected">>({});
-  const remaining = approvals.filter((a) => !handled[a.id]);
+  const { data: workspace } = useWorkspace();
+  const { data: tasks, isLoading } = useTasks(workspace?.id);
+  const update = useUpdateTask(workspace?.id);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const pending = (tasks ?? []).filter((t) => t.status === "review");
+
+  const act = async (id: string, status: "done" | "rejected") => {
+    setBusyId(id);
+    const steps =
+      status === "done"
+        ? [
+            { label: "فهم الطلب", state: "done" },
+            { label: "التنفيذ", state: "done" },
+            { label: "مراجعتك", state: "done" },
+            { label: "النشر", state: "done" },
+          ]
+        : undefined;
+    try {
+      await update.mutateAsync({ id, patch: steps ? { status, steps } : { status } });
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   return (
     <AppShell
       title="طابور الموافقات"
-      lead={`${remaining.length} عنصراً بانتظارك · متوسط المراجعة ٩ دقائق`}
+      lead={`${pending.length} عنصراً بانتظارك`}
       actions={
-        remaining.length ? (
+        pending.length ? (
           <button
-            onClick={() =>
-              setHandled(Object.fromEntries(approvals.map((a) => [a.id, "approved" as const])))
-            }
+            onClick={async () => {
+              for (const t of pending) await act(t.id, "done");
+            }}
             className="hidden items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-sm font-bold text-background sm:inline-flex"
           >
             <Check className="size-4" /> اعتماد الكل
@@ -39,7 +61,11 @@ function ApprovalsPage() {
         ) : null
       }
     >
-      {remaining.length === 0 ? (
+      {isLoading ? (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> جارٍ التحميل…
+        </p>
+      ) : pending.length === 0 ? (
         <div className="rounded-3xl border border-border bg-card p-14 text-center">
           <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-jade/12 text-jade-deep">
             <PartyPopper className="size-7" />
@@ -49,8 +75,8 @@ function ApprovalsPage() {
         </div>
       ) : (
         <div className="grid gap-5 xl:grid-cols-2">
-          {remaining.map((a) => {
-            const member = getMember(a.employee);
+          {pending.map((a) => {
+            const member = getMember(a.employee_id);
             return (
               <article key={a.id} className="rounded-3xl border border-border bg-card p-6">
                 <div className="flex flex-wrap items-center gap-2.5 text-xs">
@@ -69,28 +95,32 @@ function ApprovalsPage() {
                     <AppIcon name={a.channel} className="size-3.5" />
                     {appLabel(a.channel)}
                   </span>
-                  <span className="rounded-full bg-secondary px-2.5 py-0.5 font-bold">{a.type}</span>
-                  <span className="ms-auto text-muted-foreground">{a.scheduled}</span>
+                  <span className="rounded-full bg-secondary px-2.5 py-0.5 font-bold">{a.kind}</span>
+                  <span className="ms-auto text-muted-foreground">{a.scheduled ?? ""}</span>
                 </div>
 
                 <h2 className="mt-4 font-display text-lg font-black">{a.title}</h2>
-                <p className="mt-3 rounded-2xl bg-secondary/50 p-4 leading-relaxed text-ink-soft">
-                  {a.preview}
+                <p className="mt-3 rounded-2xl bg-secondary/50 p-4 leading-relaxed whitespace-pre-wrap text-ink-soft">
+                  {a.output ?? a.detail}
                 </p>
 
                 <div className="mt-5 flex flex-wrap gap-2">
                   <button
-                    onClick={() => setHandled((h) => ({ ...h, [a.id]: "approved" }))}
-                    className="inline-flex items-center gap-2 rounded-full bg-foreground px-5 py-2.5 text-sm font-bold text-background"
+                    onClick={() => void act(a.id, "done")}
+                    disabled={busyId === a.id}
+                    className="inline-flex items-center gap-2 rounded-full bg-foreground px-5 py-2.5 text-sm font-bold text-background disabled:opacity-60"
                   >
-                    <Check className="size-4" /> اعتماد ونشر
-                  </button>
-                  <button className="inline-flex items-center gap-2 rounded-full border border-border px-5 py-2.5 text-sm font-bold transition-colors hover:bg-secondary">
-                    <Pencil className="size-4" /> طلب تعديل
+                    {busyId === a.id ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Check className="size-4" />
+                    )}
+                    اعتماد ونشر
                   </button>
                   <button
-                    onClick={() => setHandled((h) => ({ ...h, [a.id]: "rejected" }))}
-                    className="inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold text-muted-foreground transition-colors hover:bg-secondary"
+                    onClick={() => void act(a.id, "rejected")}
+                    disabled={busyId === a.id}
+                    className="inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold text-muted-foreground transition-colors hover:bg-secondary disabled:opacity-60"
                   >
                     <X className="size-4" /> رفض
                   </button>
