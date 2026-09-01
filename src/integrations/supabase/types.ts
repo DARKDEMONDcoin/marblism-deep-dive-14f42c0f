@@ -14,13 +14,236 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      brain_items: {
+        Row: {
+          body: string | null
+          created_at: string
+          id: string
+          kind: string
+          meta: string | null
+          title: string
+          used_by: string[]
+          workspace_id: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          meta?: string | null
+          title: string
+          used_by?: string[]
+          workspace_id: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          meta?: string | null
+          title?: string
+          used_by?: string[]
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "brain_items_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      integrations: {
+        Row: {
+          account: string | null
+          created_at: string
+          employee_id: string
+          id: string
+          provider: string
+          status: string
+          workspace_id: string
+        }
+        Insert: {
+          account?: string | null
+          created_at?: string
+          employee_id: string
+          id?: string
+          provider: string
+          status?: string
+          workspace_id: string
+        }
+        Update: {
+          account?: string | null
+          created_at?: string
+          employee_id?: string
+          id?: string
+          provider?: string
+          status?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "integrations_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      messages: {
+        Row: {
+          body: string
+          created_at: string
+          employee_id: string
+          id: string
+          role: string
+          workspace_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          employee_id: string
+          id?: string
+          role: string
+          workspace_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          employee_id?: string
+          id?: string
+          role?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          company: string | null
+          created_at: string
+          dialect: string
+          full_name: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          company?: string | null
+          created_at?: string
+          dialect?: string
+          full_name?: string | null
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          company?: string | null
+          created_at?: string
+          dialect?: string
+          full_name?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      tasks: {
+        Row: {
+          channel: string
+          created_at: string
+          detail: string | null
+          employee_id: string
+          id: string
+          output: string | null
+          status: string
+          title: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          channel?: string
+          created_at?: string
+          detail?: string | null
+          employee_id: string
+          id?: string
+          output?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          channel?: string
+          created_at?: string
+          detail?: string | null
+          employee_id?: string
+          id?: string
+          output?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tasks_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workspaces: {
+        Row: {
+          banned_words: string[]
+          created_at: string
+          id: string
+          industry: string
+          initials: string
+          name: string
+          owner_id: string
+          tone: string
+          updated_at: string
+        }
+        Insert: {
+          banned_words?: string[]
+          created_at?: string
+          id?: string
+          industry?: string
+          initials?: string
+          name: string
+          owner_id: string
+          tone?: string
+          updated_at?: string
+        }
+        Update: {
+          banned_words?: string[]
+          created_at?: string
+          id?: string
+          industry?: string
+          initials?: string
+          name?: string
+          owner_id?: string
+          tone?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      owns_workspace: { Args: { _workspace_id: string }; Returns: boolean }
     }
     Enums: {
       [_ in never]: never
