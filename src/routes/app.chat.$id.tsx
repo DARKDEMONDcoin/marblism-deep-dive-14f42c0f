@@ -1,0 +1,233 @@
+import { useState } from "react";
+import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { Send, Settings2, Paperclip, Sparkles } from "lucide-react";
+
+import { AppShell } from "@/components/app/AppShell";
+import { AppIcon, appLabel } from "@/components/site/AppIcon";
+import { getMember } from "@/data/team";
+import {
+  conversations,
+  starterPrompts,
+  integrations,
+  integrationStatusLabel,
+  type ChatMessage,
+} from "@/data/app";
+import { cn } from "@/lib/utils";
+
+export const Route = createFileRoute("/app/chat/$id")({
+  loader: ({ params }) => {
+    const member = getMember(params.id);
+    if (!member) throw notFound();
+    return { name: member.name, role: member.role };
+  },
+  head: ({ loaderData }) => ({
+    meta: [
+      { title: loaderData ? `محادثة ${loaderData.name} | سهل` : "محادثة | سهل" },
+      {
+        name: "description",
+        content: loaderData ? `تحدث مع ${loaderData.name} — ${loaderData.role}.` : "محادثة الموظف.",
+      },
+      { name: "robots", content: "noindex" },
+    ],
+  }),
+  errorComponent: () => <ChatMissing />,
+  notFoundComponent: () => <ChatMissing />,
+  component: ChatPage,
+});
+
+function ChatMissing() {
+  return (
+    <AppShell title="الموظف غير موجود">
+      <div className="rounded-3xl border border-border bg-card p-10 text-center">
+        <p className="text-ink-soft">لم نعثر على هذا الموظف ضمن فريقك.</p>
+        <Link
+          to="/app/chat"
+          className="mt-5 inline-block rounded-full bg-foreground px-6 py-2.5 text-sm font-bold text-background"
+        >
+          العودة للمحادثات
+        </Link>
+      </div>
+    </AppShell>
+  );
+}
+
+function ChatPage() {
+  const { id } = Route.useParams();
+  const member = getMember(id)!;
+  const [messages, setMessages] = useState<ChatMessage[]>(conversations[id] ?? []);
+  const [draft, setDraft] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+  const owned = integrations.filter((i) => i.owner === id);
+
+  const send = (text: string) => {
+    const body = text.trim();
+    if (!body) return;
+    setMessages((prev) => [
+      ...prev,
+      { id: `u${prev.length}`, from: "user", body, time: "الآن" },
+      {
+        id: `a${prev.length}`,
+        from: "agent",
+        body: `تمام — بدأت العمل على «${body}». سأضع النتيجة في طابور الموافقات فور جاهزيتها.`,
+        time: "الآن",
+      },
+    ]);
+    setDraft("");
+  };
+
+  return (
+    <AppShell
+      title={member.name}
+      lead={member.role}
+      padded={false}
+      actions={
+        <button
+          onClick={() => setShowSettings((v) => !v)}
+          className={cn(
+            "grid size-10 place-items-center rounded-xl border border-border transition-colors",
+            showSettings ? "bg-foreground text-background" : "hover:bg-secondary",
+          )}
+          aria-label="إعدادات الموظف"
+        >
+          <Settings2 className="size-4.5" />
+        </button>
+      }
+    >
+      <div className="grid lg:grid-cols-[1fr_20rem]">
+        <div className="flex min-h-[calc(100vh-5.5rem)] flex-col">
+          <div className="flex-1 space-y-4 px-5 py-6">
+            {messages.map((m) => (
+              <div
+                key={m.id}
+                className={cn("flex gap-3", m.from === "user" ? "justify-end" : "justify-start")}
+              >
+                {m.from === "agent" ? (
+                  <span
+                    className="grid size-9 shrink-0 place-items-center rounded-xl"
+                    style={{ background: member.tintSoft, color: member.tint }}
+                  >
+                    <member.icon className="size-4.5" strokeWidth={2.2} />
+                  </span>
+                ) : null}
+                <div
+                  className={cn(
+                    "max-w-[38rem] rounded-3xl px-5 py-3.5 leading-relaxed",
+                    m.from === "user"
+                      ? "bg-foreground text-background"
+                      : "border border-border bg-card",
+                  )}
+                >
+                  <p>{m.body}</p>
+                  <p
+                    className={cn(
+                      "mt-1.5 text-[0.7rem]",
+                      m.from === "user" ? "text-background/60" : "text-muted-foreground",
+                    )}
+                  >
+                    {m.time}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="sticky bottom-0 border-t border-border bg-background/90 p-5 backdrop-blur-xl">
+            <div className="mb-3 flex flex-wrap gap-2">
+              {(starterPrompts[id] ?? []).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => send(p)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border px-3.5 py-1.5 text-xs font-semibold transition-colors hover:bg-secondary"
+                >
+                  <Sparkles className="size-3.5 text-jade" />
+                  {p}
+                </button>
+              ))}
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                send(draft);
+              }}
+              className="flex items-center gap-2 rounded-2xl border border-border bg-card p-2"
+            >
+              <button
+                type="button"
+                className="grid size-10 shrink-0 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-secondary"
+                aria-label="إرفاق ملف"
+              >
+                <Paperclip className="size-4.5" />
+              </button>
+              <input
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder={`اكتب طلبك لـ${member.name}…`}
+                className="min-w-0 flex-1 bg-transparent px-2 py-2 outline-none"
+              />
+              <button
+                type="submit"
+                className="grid size-10 shrink-0 place-items-center rounded-xl bg-foreground text-background"
+                aria-label="إرسال"
+              >
+                <Send className="size-4.5 -scale-x-100" />
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <aside
+          className={cn(
+            "border-s border-border bg-card p-5",
+            showSettings ? "block" : "hidden lg:block",
+          )}
+        >
+          <h2 className="font-display font-black">حسابات {member.name}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">حساب واحد لكل منصة داخل مساحة العمل.</p>
+          <ul className="mt-4 space-y-2">
+            {owned.map((i) => (
+              <li
+                key={i.id}
+                className="flex items-center gap-3 rounded-2xl border border-border/70 p-3"
+              >
+                <AppIcon name={i.id} className="size-5 shrink-0" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-bold">{appLabel(i.id)}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {i.account ?? "لم يُربط بعد"}
+                  </span>
+                </span>
+                <span
+                  className={cn(
+                    "shrink-0 rounded-full px-2.5 py-1 text-[0.7rem] font-bold",
+                    i.status === "connected" && "bg-jade/12 text-jade-deep",
+                    i.status === "error" && "bg-coral/15 text-coral",
+                    i.status === "disconnected" && "bg-secondary text-muted-foreground",
+                  )}
+                >
+                  {integrationStatusLabel[i.status]}
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          <h2 className="mt-7 font-display font-black">ما يجيده</h2>
+          <ul className="mt-3 space-y-2">
+            {member.tasks.slice(0, 4).map((t) => (
+              <li key={t} className="flex gap-2 text-sm text-ink-soft">
+                <span className="mt-2 size-1.5 shrink-0 rounded-full bg-jade" />
+                {t}
+              </li>
+            ))}
+          </ul>
+
+          <Link
+            to="/app/brain"
+            className="mt-7 block rounded-2xl bg-secondary/60 p-4 text-sm font-semibold transition-colors hover:bg-secondary"
+          >
+            يقرأ من عقل العلامة — أضف مستندات ليصبح أدق ↖
+          </Link>
+        </aside>
+      </div>
+    </AppShell>
+  );
+}
