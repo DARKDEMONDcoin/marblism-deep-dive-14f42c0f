@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Plus } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import { AppShell } from "@/components/app/AppShell";
 import { getMember } from "@/data/team";
-import { tasks, taskStatusLabel, type TaskItem } from "@/data/app";
+import { taskStatusLabel } from "@/data/app";
+import { taskSteps, useTasks, useWorkspace, type Task } from "@/lib/data";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app/tasks")({
@@ -18,16 +19,16 @@ export const Route = createFileRoute("/app/tasks")({
   component: TasksPage,
 });
 
-const filters: { id: TaskItem["status"] | "all"; label: string }[] = [
+const filters = [
   { id: "all", label: "الكل" },
   { id: "running", label: "قيد التنفيذ" },
   { id: "review", label: "بانتظار موافقتك" },
   { id: "queued", label: "في الطابور" },
   { id: "paused", label: "متوقفة" },
   { id: "done", label: "مُنجزة" },
-];
+] as const;
 
-const statusStyle: Record<TaskItem["status"], string> = {
+const statusStyle: Record<string, string> = {
   running: "bg-amber/15 text-amber",
   review: "bg-primary/10 text-primary",
   queued: "bg-secondary text-muted-foreground",
@@ -35,19 +36,21 @@ const statusStyle: Record<TaskItem["status"], string> = {
   done: "bg-jade/12 text-jade-deep",
 };
 
+function when(t: Task) {
+  return new Date(t.created_at).toLocaleDateString("ar", { day: "numeric", month: "long" });
+}
+
 function TasksPage() {
-  const [filter, setFilter] = useState<TaskItem["status"] | "all">("all");
-  const list = filter === "all" ? tasks : tasks.filter((t) => t.status === filter);
+  const [filter, setFilter] = useState<(typeof filters)[number]["id"]>("all");
+  const { data: workspace } = useWorkspace();
+  const { data: tasks, isLoading } = useTasks(workspace?.id);
+  const all = tasks ?? [];
+  const list = filter === "all" ? all : all.filter((t) => t.status === filter);
 
   return (
     <AppShell
       title="المهام"
       lead="كل مهمة تُنفَّذ على خطوات — وتتوقف بأمان إن انقطع أي ربط."
-      actions={
-        <button className="hidden items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-sm font-bold text-background sm:inline-flex">
-          <Plus className="size-4" /> مهمة جديدة
-        </button>
-      }
     >
       <div className="flex flex-wrap gap-2">
         {filters.map((f) => (
@@ -66,65 +69,84 @@ function TasksPage() {
         ))}
       </div>
 
-      <div className="mt-6 space-y-4">
-        {list.map((t) => {
-          const member = getMember(t.employee);
-          return (
-            <article key={t.id} className="rounded-3xl border border-border bg-card p-6">
-              <div className="flex flex-wrap items-center gap-3">
-                {member ? (
-                  <span className="inline-flex items-center gap-2 text-sm font-bold">
-                    <span
-                      className="grid size-8 place-items-center rounded-xl"
-                      style={{ background: member.tintSoft, color: member.tint }}
-                    >
-                      <member.icon className="size-4" strokeWidth={2.2} />
+      {isLoading ? (
+        <p className="mt-8 flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> جارٍ التحميل…
+        </p>
+      ) : list.length === 0 ? (
+        <div className="mt-6 rounded-3xl border border-border bg-card p-12 text-center">
+          <p className="font-display text-xl font-black">لا توجد مهام هنا</p>
+          <p className="mt-2 text-ink-soft">
+            اطلب من أي موظف عبر المحادثة، وستظهر مهمته هنا مباشرة.
+          </p>
+        </div>
+      ) : (
+        <div className="mt-6 space-y-4">
+          {list.map((t) => {
+            const member = getMember(t.employee_id);
+            const steps = taskSteps(t);
+            return (
+              <article key={t.id} className="rounded-3xl border border-border bg-card p-6">
+                <div className="flex flex-wrap items-center gap-3">
+                  {member ? (
+                    <span className="inline-flex items-center gap-2 text-sm font-bold">
+                      <span
+                        className="grid size-8 place-items-center rounded-xl"
+                        style={{ background: member.tintSoft, color: member.tint }}
+                      >
+                        <member.icon className="size-4" strokeWidth={2.2} />
+                      </span>
+                      {member.name}
                     </span>
-                    {member.name}
-                  </span>
-                ) : null}
-                <span
-                  className={cn(
-                    "rounded-full px-3 py-1 text-xs font-bold",
-                    statusStyle[t.status],
-                  )}
-                >
-                  {taskStatusLabel[t.status]}
-                </span>
-                <span className="ms-auto text-xs text-muted-foreground">{t.when}</span>
-              </div>
-
-              <h2 className="mt-3 font-display text-lg font-black">{t.title}</h2>
-
-              <ol className="mt-4 flex flex-wrap gap-2">
-                {t.steps.map((s) => (
-                  <li
-                    key={s.label}
+                  ) : null}
+                  <span
                     className={cn(
-                      "inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold",
-                      s.state === "done" && "border-jade/30 bg-jade/10 text-jade-deep",
-                      s.state === "active" && "border-amber/40 bg-amber/12 text-amber",
-                      s.state === "todo" && "border-border text-muted-foreground",
-                      s.state === "blocked" && "border-coral/40 bg-coral/12 text-coral",
+                      "rounded-full px-3 py-1 text-xs font-bold",
+                      statusStyle[t.status] ?? "bg-secondary",
                     )}
                   >
-                    <span
-                      className={cn(
-                        "size-1.5 rounded-full",
-                        s.state === "done" && "bg-jade",
-                        s.state === "active" && "bg-amber",
-                        s.state === "todo" && "bg-muted-foreground/40",
-                        s.state === "blocked" && "bg-coral",
-                      )}
-                    />
-                    {s.label}
-                  </li>
-                ))}
-              </ol>
-            </article>
-          );
-        })}
-      </div>
+                    {taskStatusLabel[t.status as keyof typeof taskStatusLabel] ?? t.status}
+                  </span>
+                  <span className="ms-auto text-xs text-muted-foreground">{when(t)}</span>
+                </div>
+
+                <h2 className="mt-3 font-display text-lg font-black">{t.title}</h2>
+                {t.detail ? (
+                  <p className="mt-1.5 leading-relaxed text-ink-soft">{t.detail}</p>
+                ) : null}
+
+                {steps.length ? (
+                  <ol className="mt-4 flex flex-wrap gap-2">
+                    {steps.map((s) => (
+                      <li
+                        key={s.label}
+                        className={cn(
+                          "inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold",
+                          s.state === "done" && "border-jade/30 bg-jade/10 text-jade-deep",
+                          s.state === "active" && "border-amber/40 bg-amber/12 text-amber",
+                          s.state === "todo" && "border-border text-muted-foreground",
+                          s.state === "blocked" && "border-coral/40 bg-coral/12 text-coral",
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "size-1.5 rounded-full",
+                            s.state === "done" && "bg-jade",
+                            s.state === "active" && "bg-amber",
+                            s.state === "todo" && "bg-muted-foreground/40",
+                            s.state === "blocked" && "bg-coral",
+                          )}
+                        />
+                        {s.label}
+                      </li>
+                    ))}
+                  </ol>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      )}
     </AppShell>
   );
 }

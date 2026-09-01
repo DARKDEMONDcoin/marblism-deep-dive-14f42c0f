@@ -2,7 +2,8 @@ import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Check } from "lucide-react";
 
-import { AuthShell, authInput, SocialButtons } from "@/components/site/AuthShell";
+import { AuthShell, authInput } from "@/components/site/AuthShell";
+import { signUp } from "@/lib/auth";
 
 export const Route = createFileRoute("/signup")({
   head: () => ({
@@ -26,6 +27,8 @@ const perks = ["١٤ يوماً مجاناً", "بدون بطاقة ائتمان
 function SignupPage() {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   return (
     <AuthShell
@@ -54,10 +57,31 @@ function SignupPage() {
 
       <form
         className="space-y-4"
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
+          const form = new FormData(e.currentTarget);
           setBusy(true);
-          navigate({ to: "/dashboard" });
+          setError(null);
+          try {
+            await signUp({
+              email: String(form.get("email")),
+              password: String(form.get("password")),
+              fullName: String(form.get("name")),
+              company: String(form.get("company")),
+              dialect: String(form.get("dialect")),
+            });
+            const { supabase } = await import("@/integrations/supabase/client");
+            const { data } = await supabase.auth.getSession();
+            if (data.session) {
+              void navigate({ to: "/onboarding" });
+            } else {
+              setNotice("أرسلنا رابط تفعيل إلى بريدك — افتحه لإكمال إنشاء حسابك.");
+              setBusy(false);
+            }
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "تعذّر إنشاء الحساب");
+            setBusy(false);
+          }
         }}
       >
         <div className="grid gap-4 sm:grid-cols-2">
@@ -65,20 +89,33 @@ function SignupPage() {
             <label className="mb-1.5 block text-sm font-bold" htmlFor="name">
               الاسم
             </label>
-            <input id="name" required className={authInput} placeholder="اسمك الكريم" />
+            <input id="name" name="name" required className={authInput} placeholder="اسمك الكريم" />
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-bold" htmlFor="company">
               اسم النشاط
             </label>
-            <input id="company" required className={authInput} placeholder="متجر / شركة" />
+            <input
+              id="company"
+              name="company"
+              required
+              className={authInput}
+              placeholder="متجر / شركة"
+            />
           </div>
         </div>
         <div>
           <label className="mb-1.5 block text-sm font-bold" htmlFor="email">
             البريد الإلكتروني
           </label>
-          <input id="email" type="email" required className={authInput} placeholder="you@company.com" />
+          <input
+            id="email"
+            name="email"
+            type="email"
+            required
+            className={authInput}
+            placeholder="you@company.com"
+          />
         </div>
         <div>
           <label className="mb-1.5 block text-sm font-bold" htmlFor="password">
@@ -86,6 +123,7 @@ function SignupPage() {
           </label>
           <input
             id="password"
+            name="password"
             type="password"
             required
             minLength={8}
@@ -97,7 +135,7 @@ function SignupPage() {
           <label className="mb-1.5 block text-sm font-bold" htmlFor="dialect">
             لهجة المحتوى
           </label>
-          <select id="dialect" className={authInput} defaultValue="خليجية">
+          <select id="dialect" name="dialect" className={authInput} defaultValue="خليجية">
             <option>خليجية</option>
             <option>مصرية</option>
             <option>شامية</option>
@@ -105,6 +143,18 @@ function SignupPage() {
             <option>فصحى معاصرة</option>
           </select>
         </div>
+
+        {error ? (
+          <p className="rounded-2xl bg-coral/12 px-4 py-3 text-sm font-semibold text-coral">
+            {error}
+          </p>
+        ) : null}
+        {notice ? (
+          <p className="rounded-2xl bg-jade/12 px-4 py-3 text-sm font-semibold text-jade-deep">
+            {notice}
+          </p>
+        ) : null}
+
         <button
           type="submit"
           disabled={busy}
@@ -124,13 +174,6 @@ function SignupPage() {
           .
         </p>
       </form>
-
-      <div className="my-6 flex items-center gap-3 text-xs text-muted-foreground">
-        <span className="h-px grow bg-border" />
-        أو
-        <span className="h-px grow bg-border" />
-      </div>
-      <SocialButtons />
     </AuthShell>
   );
 }

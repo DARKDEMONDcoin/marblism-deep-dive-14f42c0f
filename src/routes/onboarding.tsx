@@ -1,12 +1,20 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, ArrowRight, Check, Upload, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Sparkles, Loader2 } from "lucide-react";
 
 import { AppIcon, appLabel } from "@/components/site/AppIcon";
 import { team } from "@/data/team";
+import {
+  useAddBrainItem,
+  useIntegrations,
+  useSetIntegrationStatus,
+  useUpdateWorkspace,
+  useWorkspace,
+} from "@/lib/data";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/onboarding")({
+  ssr: false,
   head: () => ({
     meta: [
       { title: "جهّز فريقك في ٤ خطوات | سهل" },
@@ -26,25 +34,89 @@ export const Route = createFileRoute("/onboarding")({
 
 const steps = ["نشاطك", "نبرتك", "فريقك", "حساباتك"] as const;
 
-const channels = ["instagram", "x", "linkedin", "tiktok", "facebook", "gmail", "calendar", "whatsapp", "wordpress", "shopify", "analytics", "hubspot"];
-
 const tones = [
-  { id: "warm", label: "دافئة وقريبة", sample: "أهلاً! جهّزنا لك شيئاً يعجبك اليوم 🌿" },
-  { id: "pro", label: "احترافية ورصينة", sample: "يسرّنا مشاركتكم آخر تحديثات المنتج لهذا الربع." },
-  { id: "bold", label: "جريئة ومباشرة", sample: "توقف عن إضاعة ميزانيتك. إليك ما ينجح فعلاً." },
+  { id: "دافئة وقريبة، بدون مبالغة", label: "دافئة وقريبة", sample: "أهلاً! جهّزنا لك شيئاً يعجبك اليوم 🌿" },
+  {
+    id: "احترافية ورصينة",
+    label: "احترافية ورصينة",
+    sample: "يسرّنا مشاركتكم آخر تحديثات المنتج لهذا الربع.",
+  },
+  { id: "جريئة ومباشرة", label: "جريئة ومباشرة", sample: "توقف عن إضاعة ميزانيتك. إليك ما ينجح فعلاً." },
 ];
+
+const field = "w-full rounded-2xl border border-border px-4 py-3 outline-none focus:border-jade";
 
 function Onboarding() {
   const navigate = useNavigate();
+  const { data: workspace } = useWorkspace();
+  const { data: integrations } = useIntegrations(workspace?.id);
+  const updateWorkspace = useUpdateWorkspace();
+  const setIntegration = useSetIntegrationStatus(workspace?.id);
+  const addBrain = useAddBrainItem(workspace?.id);
+
   const [step, setStep] = useState(0);
-  const [tone, setTone] = useState("warm");
+  const [saving, setSaving] = useState(false);
+  const [name, setName] = useState("");
+  const [industry, setIndustry] = useState("");
+  const [about, setAbout] = useState("");
+  const [tone, setTone] = useState(tones[0]!.id);
+  const [banned, setBanned] = useState("الأفضل في العالم، مجاناً ١٠٠٪");
   const [hired, setHired] = useState<string[]>(team.map((t) => t.id));
-  const [linked, setLinked] = useState<string[]>(["instagram", "gmail"]);
+  const [linked, setLinked] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!workspace) return;
+    setName((v) => v || workspace.name);
+    setIndustry((v) => v || workspace.industry);
+  }, [workspace]);
+
+  const providers = [...new Set((integrations ?? []).map((i) => i.provider))];
 
   const toggle = (list: string[], set: (v: string[]) => void, id: string) =>
     set(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
 
-  const next = () => (step === steps.length - 1 ? navigate({ to: "/app" }) : setStep(step + 1));
+  const finish = async () => {
+    if (!workspace) return;
+    setSaving(true);
+    try {
+      await updateWorkspace.mutateAsync({
+        id: workspace.id,
+        patch: {
+          name: name || workspace.name,
+          industry: industry || workspace.industry,
+          initials: (name || workspace.name).slice(0, 2),
+          tone,
+          banned_words: banned
+            .split("،")
+            .map((s) => s.trim())
+            .filter(Boolean),
+        },
+      });
+      if (about.trim()) {
+        await addBrain.mutateAsync({
+          kind: "note",
+          title: "ماذا نبيع ولمن",
+          body: about.trim(),
+          meta: "ملاحظة · من الإعداد الأولي",
+        });
+      }
+      for (const i of integrations ?? []) {
+        const shouldLink = linked.includes(i.provider) && hired.includes(i.employee_id);
+        if (shouldLink && i.status !== "connected") {
+          await setIntegration.mutateAsync({
+            id: i.id,
+            status: "connected",
+            account: `${name || workspace.name} · ${appLabel(i.provider)}`,
+          });
+        }
+      }
+      void navigate({ to: "/app" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const next = () => (step === steps.length - 1 ? void finish() : setStep(step + 1));
 
   return (
     <div className="min-h-screen bg-background">
@@ -92,28 +164,33 @@ function Onboarding() {
               <label className="block">
                 <span className="mb-2 block text-sm font-bold">اسم النشاط</span>
                 <input
-                  className="w-full rounded-2xl border border-border px-4 py-3 outline-none focus:border-jade"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className={field}
                   placeholder="مثال: نخلة للتمور الفاخرة"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-bold">مجال النشاط</span>
+                <input
+                  value={industry}
+                  onChange={(e) => setIndustry(e.target.value)}
+                  className={field}
+                  placeholder="تجزئة، مطاعم، خدمات…"
                 />
               </label>
               <label className="block">
                 <span className="mb-2 block text-sm font-bold">ماذا تبيع ولمن؟</span>
                 <textarea
-                  className="min-h-32 w-full resize-none rounded-2xl border border-border px-4 py-3 outline-none focus:border-jade"
+                  value={about}
+                  onChange={(e) => setAbout(e.target.value)}
+                  className={cn(field, "min-h-32 resize-none")}
                   placeholder="نورّد تموراً فاخرة معبأة يدوياً للمتاجر والفنادق في السعودية…"
-                />
-              </label>
-              <label className="block">
-                <span className="mb-2 block text-sm font-bold">رابط موقعك أو حسابك (اختياري)</span>
-                <input
-                  dir="ltr"
-                  className="w-full rounded-2xl border border-border px-4 py-3 text-start outline-none focus:border-jade"
-                  placeholder="https://nakhla.sa"
                 />
               </label>
               <p className="flex items-center gap-2 rounded-2xl bg-secondary/60 p-4 text-sm text-ink-soft">
                 <Sparkles className="size-4 shrink-0 text-jade" />
-                سنقرأ الرابط تلقائياً ونستخرج منه هويتك ومنتجاتك.
+                هذا النص يذهب إلى عقل العلامة ويقرأه كل موظفيك.
               </p>
             </div>
           ) : null}
@@ -139,15 +216,11 @@ function Onboarding() {
               <label className="block">
                 <span className="mb-2 block text-sm font-bold">كلمات ممنوعة</span>
                 <input
-                  className="w-full rounded-2xl border border-border px-4 py-3 outline-none focus:border-jade"
-                  defaultValue="الأفضل في العالم، مجاناً ١٠٠٪"
+                  value={banned}
+                  onChange={(e) => setBanned(e.target.value)}
+                  className={field}
                 />
               </label>
-              <div className="rounded-2xl border-2 border-dashed border-border p-6 text-center">
-                <Upload className="mx-auto size-5 text-muted-foreground" />
-                <p className="mt-2 text-sm font-bold">ارفع دليل الهوية أو نصوصاً تفتخر بها</p>
-                <p className="text-xs text-muted-foreground">PDF، Word، صور — تذهب إلى عقل العلامة.</p>
-              </div>
             </div>
           ) : null}
 
@@ -175,7 +248,9 @@ function Onboarding() {
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block font-bold">{m.name}</span>
-                        <span className="block truncate text-sm text-muted-foreground">{m.role}</span>
+                        <span className="block truncate text-sm text-muted-foreground">
+                          {m.role}
+                        </span>
                       </span>
                       <span
                         className={cn(
@@ -196,30 +271,25 @@ function Onboarding() {
             <div className="space-y-5">
               <h1 className="font-display text-2xl font-black md:text-3xl">اربط حساباتك</h1>
               <p className="text-ink-soft">
-                عبر OAuth الرسمي — لا نطلب كلمات مرورك، ويمكنك الفصل في أي وقت.
+                اختر المنصات التي سيعمل عليها فريقك — يمكنك تعديلها لاحقاً من صفحة التكاملات.
               </p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {channels.map((c) => {
-                  const on = linked.includes(c);
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {providers.map((p) => {
+                  const on = linked.includes(p);
                   return (
                     <button
-                      key={c}
-                      onClick={() => toggle(linked, setLinked, c)}
+                      key={p}
+                      onClick={() => toggle(linked, setLinked, p)}
                       className={cn(
-                        "flex items-center gap-3 rounded-2xl border p-4 text-start transition-colors",
+                        "flex items-center gap-2.5 rounded-2xl border p-4 text-start transition-colors",
                         on ? "border-jade bg-jade/8" : "border-border hover:bg-secondary/50",
                       )}
                     >
-                      <AppIcon name={c} className="size-6 shrink-0" />
-                      <span className="flex-1 font-bold">{appLabel(c)}</span>
-                      <span
-                        className={cn(
-                          "rounded-full px-3 py-1 text-xs font-bold",
-                          on ? "bg-jade/15 text-jade-deep" : "bg-secondary text-muted-foreground",
-                        )}
-                      >
-                        {on ? "مرتبط" : "اربط"}
+                      <AppIcon name={p} className="size-5 shrink-0" />
+                      <span className="min-w-0 flex-1 truncate text-sm font-bold">
+                        {appLabel(p)}
                       </span>
+                      {on ? <Check className="size-4 shrink-0 text-jade" /> : null}
                     </button>
                   );
                 })}
@@ -227,9 +297,9 @@ function Onboarding() {
             </div>
           ) : null}
 
-          <div className="mt-8 flex items-center justify-between gap-3">
+          <div className="mt-8 flex items-center justify-between">
             <button
-              onClick={() => setStep((s) => Math.max(0, s - 1))}
+              onClick={() => setStep(Math.max(0, step - 1))}
               disabled={step === 0}
               className="inline-flex items-center gap-2 rounded-full border border-border px-5 py-2.5 text-sm font-bold disabled:opacity-40"
             >
@@ -237,9 +307,11 @@ function Onboarding() {
             </button>
             <button
               onClick={next}
-              className="inline-flex items-center gap-2 rounded-full bg-foreground px-7 py-3 text-sm font-bold text-background"
+              disabled={saving || !workspace}
+              className="inline-flex items-center gap-2 rounded-full bg-foreground px-6 py-2.5 text-sm font-bold text-background disabled:opacity-60"
             >
-              {step === steps.length - 1 ? "ادخل مساحة عملك" : "التالي"}
+              {saving ? <Loader2 className="size-4 animate-spin" /> : null}
+              {step === steps.length - 1 ? "ابدأ العمل" : "التالي"}
               <ArrowLeft className="size-4" />
             </button>
           </div>

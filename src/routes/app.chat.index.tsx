@@ -3,7 +3,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { AppShell } from "@/components/app/AppShell";
 import { team } from "@/data/team";
-import { conversations } from "@/data/app";
+import { useLastMessages, useWorkspace } from "@/lib/data";
 
 export const Route = createFileRoute("/app/chat/")({
   head: () => ({
@@ -17,11 +17,14 @@ export const Route = createFileRoute("/app/chat/")({
 });
 
 function ChatIndex() {
+  const { data: workspace } = useWorkspace();
+  const { data: messages } = useLastMessages(workspace?.id);
+
   return (
     <AppShell title="المحادثات" lead="اطلب من أي موظف ما تحتاجه — بالعربية وبلهجتك.">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {team.map((m) => {
-          const last = conversations[m.id]?.at(-1);
+          const last = (messages ?? []).find((x) => x.employee_id === m.id);
           return (
             <Link
               key={m.id}

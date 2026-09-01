@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 
-import { AuthShell, authInput, SocialButtons } from "@/components/site/AuthShell";
+import { AuthShell, authInput } from "@/components/site/AuthShell";
+import { signIn } from "@/lib/auth";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -24,6 +25,7 @@ export const Route = createFileRoute("/login")({
 function LoginPage() {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   return (
     <AuthShell
@@ -40,31 +42,53 @@ function LoginPage() {
     >
       <form
         className="space-y-4"
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
+          const form = new FormData(e.currentTarget);
           setBusy(true);
-          navigate({ to: "/dashboard" });
+          setError(null);
+          try {
+            await signIn(String(form.get("email")), String(form.get("password")));
+            void navigate({ to: "/app" });
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "تعذّر تسجيل الدخول");
+            setBusy(false);
+          }
         }}
       >
         <div>
           <label className="mb-1.5 block text-sm font-bold" htmlFor="email">
             البريد الإلكتروني
           </label>
-          <input id="email" type="email" required className={authInput} placeholder="you@company.com" />
+          <input
+            id="email"
+            name="email"
+            type="email"
+            required
+            className={authInput}
+            placeholder="you@company.com"
+          />
         </div>
         <div>
-          <div className="mb-1.5 flex items-center justify-between">
-            <label className="text-sm font-bold" htmlFor="password">
-              كلمة المرور
-            </label>
-            <span className="cursor-pointer text-xs font-semibold text-primary">نسيتها؟</span>
-          </div>
-          <input id="password" type="password" required className={authInput} placeholder="••••••••" />
+          <label className="mb-1.5 block text-sm font-bold" htmlFor="password">
+            كلمة المرور
+          </label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            required
+            className={authInput}
+            placeholder="••••••••"
+          />
         </div>
-        <label className="flex items-center gap-2 text-sm text-ink-soft">
-          <input type="checkbox" className="size-4 rounded" defaultChecked />
-          أبقني مسجّلاً على هذا الجهاز
-        </label>
+
+        {error ? (
+          <p className="rounded-2xl bg-coral/12 px-4 py-3 text-sm font-semibold text-coral">
+            {error}
+          </p>
+        ) : null}
+
         <button
           type="submit"
           disabled={busy}
@@ -73,13 +97,6 @@ function LoginPage() {
           {busy ? "جارٍ الدخول…" : "تسجيل الدخول"}
         </button>
       </form>
-
-      <div className="my-6 flex items-center gap-3 text-xs text-muted-foreground">
-        <span className="h-px grow bg-border" />
-        أو
-        <span className="h-px grow bg-border" />
-      </div>
-      <SocialButtons />
     </AuthShell>
   );
 }

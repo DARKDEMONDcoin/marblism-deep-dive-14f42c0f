@@ -1,17 +1,15 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { Send, Settings2, Paperclip, Sparkles } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { Send, Settings2, Sparkles, Loader2 } from "lucide-react";
 
 import { AppShell } from "@/components/app/AppShell";
 import { AppIcon, appLabel } from "@/components/site/AppIcon";
 import { getMember } from "@/data/team";
-import {
-  conversations,
-  starterPrompts,
-  integrations,
-  integrationStatusLabel,
-  type ChatMessage,
-} from "@/data/app";
+import { starterPrompts, integrationStatusLabel } from "@/data/app";
+import { useIntegrations, useMessages, useWorkspace } from "@/lib/data";
+import { askEmployee } from "@/lib/ai.functions";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app/chat/$id")({
@@ -51,28 +49,46 @@ function ChatMissing() {
   );
 }
 
+function timeOf(iso: string) {
+  return new Date(iso).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" });
+}
+
 function ChatPage() {
   const { id } = Route.useParams();
   const member = getMember(id)!;
-  const [messages, setMessages] = useState<ChatMessage[]>(conversations[id] ?? []);
+  const qc = useQueryClient();
+  const { data: workspace } = useWorkspace();
+  const { data: messages } = useMessages(workspace?.id, id);
+  const { data: integrations } = useIntegrations(workspace?.id);
   const [draft, setDraft] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const owned = integrations.filter((i) => i.owner === id);
+  const endRef = useRef<HTMLDivElement>(null);
+  const ask = useServerFn(askEmployee);
 
-  const send = (text: string) => {
+  const owned = (integrations ?? []).filter((i) => i.employee_id === id);
+
+  const send = useMutation({
+    mutationFn: (message: string) =>
+      ask({ data: { workspaceId: workspace!.id, employeeId: id, message } }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["messages", workspace?.id, id] });
+      void qc.invalidateQueries({ queryKey: ["messages-last", workspace?.id] });
+      void qc.invalidateQueries({ queryKey: ["tasks", workspace?.id] });
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : "تعذّر إرسال الطلب"),
+  });
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages?.length, send.isPending]);
+
+  const submit = (text: string) => {
     const body = text.trim();
-    if (!body) return;
-    setMessages((prev) => [
-      ...prev,
-      { id: `u${prev.length}`, from: "user", body, time: "الآن" },
-      {
-        id: `a${prev.length}`,
-        from: "agent",
-        body: `تمام — بدأت العمل على «${body}». سأضع النتيجة في طابور الموافقات فور جاهزيتها.`,
-        time: "الآن",
-      },
-    ]);
+    if (!body || !workspace || send.isPending) return;
+    setError(null);
     setDraft("");
+    send.mutate(body);
   };
 
   return (
@@ -96,12 +112,25 @@ function ChatPage() {
       <div className="grid lg:grid-cols-[1fr_20rem]">
         <div className="flex min-h-[calc(100vh-5.5rem)] flex-col">
           <div className="flex-1 space-y-4 px-5 py-6">
-            {messages.map((m) => (
+            {(messages ?? []).length === 0 ? (
+              <div className="rounded-3xl border border-border bg-card p-8 text-center">
+                <span
+                  className="mx-auto grid size-12 place-items-center rounded-2xl"
+                  style={{ background: member.tintSoft, color: member.tint }}
+                >
+                  <member.icon className="size-6" strokeWidth={2.2} />
+                </span>
+                <p className="mt-4 font-bold">{member.tagline}</p>
+                <p className="mt-1 text-sm text-ink-soft">اكتب طلبك بالأسفل وسأبدأ فوراً.</p>
+              </div>
+            ) : null}
+
+            {(messages ?? []).map((m) => (
               <div
                 key={m.id}
-                className={cn("flex gap-3", m.from === "user" ? "justify-end" : "justify-start")}
+                className={cn("flex gap-3", m.role === "user" ? "justify-end" : "justify-start")}
               >
-                {m.from === "agent" ? (
+                {m.role !== "user" ? (
                   <span
                     className="grid size-9 shrink-0 place-items-center rounded-xl"
                     style={{ background: member.tintSoft, color: member.tint }}
@@ -111,8 +140,8 @@ function ChatPage() {
                 ) : null}
                 <div
                   className={cn(
-                    "max-w-[38rem] rounded-3xl px-5 py-3.5 leading-relaxed",
-                    m.from === "user"
+                    "max-w-[38rem] rounded-3xl px-5 py-3.5 leading-relaxed whitespace-pre-wrap",
+                    m.role === "user"
                       ? "bg-foreground text-background"
                       : "border border-border bg-card",
                   )}
@@ -121,14 +150,33 @@ function ChatPage() {
                   <p
                     className={cn(
                       "mt-1.5 text-[0.7rem]",
-                      m.from === "user" ? "text-background/60" : "text-muted-foreground",
+                      m.role === "user" ? "text-background/60" : "text-muted-foreground",
                     )}
                   >
-                    {m.time}
+                    {timeOf(m.created_at)}
                   </p>
                 </div>
               </div>
             ))}
+
+            {send.isPending ? (
+              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <span
+                  className="grid size-9 shrink-0 place-items-center rounded-xl"
+                  style={{ background: member.tintSoft, color: member.tint }}
+                >
+                  <member.icon className="size-4.5" strokeWidth={2.2} />
+                </span>
+                <Loader2 className="size-4 animate-spin" /> {member.name} يعمل على طلبك…
+              </div>
+            ) : null}
+
+            {error ? (
+              <p className="rounded-2xl bg-coral/12 px-4 py-3 text-sm font-semibold text-coral">
+                {error}
+              </p>
+            ) : null}
+            <div ref={endRef} />
           </div>
 
           <div className="sticky bottom-0 border-t border-border bg-background/90 p-5 backdrop-blur-xl">
@@ -136,8 +184,9 @@ function ChatPage() {
               {(starterPrompts[id] ?? []).map((p) => (
                 <button
                   key={p}
-                  onClick={() => send(p)}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-border px-3.5 py-1.5 text-xs font-semibold transition-colors hover:bg-secondary"
+                  onClick={() => submit(p)}
+                  disabled={send.isPending}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border px-3.5 py-1.5 text-xs font-semibold transition-colors hover:bg-secondary disabled:opacity-50"
                 >
                   <Sparkles className="size-3.5 text-jade" />
                   {p}
@@ -147,29 +196,27 @@ function ChatPage() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                send(draft);
+                submit(draft);
               }}
               className="flex items-center gap-2 rounded-2xl border border-border bg-card p-2"
             >
-              <button
-                type="button"
-                className="grid size-10 shrink-0 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-secondary"
-                aria-label="إرفاق ملف"
-              >
-                <Paperclip className="size-4.5" />
-              </button>
               <input
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder={`اكتب طلبك لـ${member.name}…`}
-                className="min-w-0 flex-1 bg-transparent px-2 py-2 outline-none"
+                className="min-w-0 flex-1 bg-transparent px-3 py-2 outline-none"
               />
               <button
                 type="submit"
-                className="grid size-10 shrink-0 place-items-center rounded-xl bg-foreground text-background"
+                disabled={send.isPending || !workspace}
+                className="grid size-10 shrink-0 place-items-center rounded-xl bg-foreground text-background disabled:opacity-50"
                 aria-label="إرسال"
               >
-                <Send className="size-4.5 -scale-x-100" />
+                {send.isPending ? (
+                  <Loader2 className="size-4.5 animate-spin" />
+                ) : (
+                  <Send className="size-4.5 -scale-x-100" />
+                )}
               </button>
             </form>
           </div>
@@ -189,9 +236,9 @@ function ChatPage() {
                 key={i.id}
                 className="flex items-center gap-3 rounded-2xl border border-border/70 p-3"
               >
-                <AppIcon name={i.id} className="size-5 shrink-0" />
+                <AppIcon name={i.provider} className="size-5 shrink-0" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-bold">{appLabel(i.id)}</span>
+                  <span className="block truncate text-sm font-bold">{appLabel(i.provider)}</span>
                   <span className="block truncate text-xs text-muted-foreground">
                     {i.account ?? "لم يُربط بعد"}
                   </span>
@@ -204,7 +251,8 @@ function ChatPage() {
                     i.status === "disconnected" && "bg-secondary text-muted-foreground",
                   )}
                 >
-                  {integrationStatusLabel[i.status]}
+                  {integrationStatusLabel[i.status as keyof typeof integrationStatusLabel] ??
+                    i.status}
                 </span>
               </li>
             ))}
